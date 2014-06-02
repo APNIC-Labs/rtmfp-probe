@@ -1,5 +1,6 @@
 # http://www.gnu.org/software/automake
 
+Makefile
 Makefile.in
 
 # http://www.gnu.org/software/autoconf
@@ -22,3 +23,4 @@ Makefile.in
 /macros/ltversion.m4
 /macros/lt~obsolete.m4
 /ltmain.sh
+/libtool
