@@ -5,6 +5,7 @@ AC_PREREQ([2.69])
 AC_INIT(rtmfprobe, 1.0a)
 
 AC_CONFIG_SRCDIR([src/main.c])
+AC_CONFIG_MACRO_DIR(macros)
 
 AM_INIT_AUTOMAKE(foreign -Wall -Werror)
 
@@ -14,6 +15,7 @@ AC_PROG_INSTALL
 
 # Checks for libraries.
 AM_PROG_LIBTOOL
+AX_CHECK_OPENSSL
 
 # Checks for header files.
 

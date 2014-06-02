@@ -14,3 +14,11 @@ Makefile.in
 /missing
 /stamp-h1
 
+# libtool
+
+/macros/libtool.m4
+/macros/ltoptions.m4
+/macros/ltsugar.m4
+/macros/ltversion.m4
+/macros/lt~obsolete.m4
+/ltmain.sh
