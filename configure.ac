@@ -2,12 +2,12 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT(rtmfprobe, 1.0a)
+AC_INIT([rtmfprobe], [1.0a])
 
 AC_CONFIG_SRCDIR([src/main.c])
-AC_CONFIG_MACRO_DIR(macros)
+AC_CONFIG_MACRO_DIR([m4])
 
-AM_INIT_AUTOMAKE(foreign -Wall -Werror)
+AM_INIT_AUTOMAKE
 
 # Checks for programs.
 AC_PROG_CC
@@ -15,7 +15,7 @@ AC_PROG_INSTALL
 
 # Checks for libraries.
 AM_PROG_LIBTOOL
-AX_CHECK_OPENSSL
+AX_CHECK_OPENSSL([], AC_MSG_ERROR(OpenSSL is required.))
 
 # Checks for header files.
 
@@ -23,5 +23,7 @@ AX_CHECK_OPENSSL
 
 # Checks for library functions.
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile
+                 src/Makefile])
+AC_CONFIG_HEADERS([config.h])
 AC_OUTPUT

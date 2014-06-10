@@ -1,3 +1,14 @@
+# C
+
+src/.deps/*
+src/*.o
+
+# this program
+src/rtmfprobe
+
+# python
+t/*.pyc
+
 # http://www.gnu.org/software/automake
 
 Makefile
@@ -9,18 +20,21 @@ Makefile.in
 /aclocal.m4
 /compile
 /configure
+/configure.lineno
 /config.*
 /depcomp
 /install-sh
 /missing
 /stamp-h1
+/COPYING
+/INSTALL
 
 # libtool
 
-/macros/libtool.m4
-/macros/ltoptions.m4
-/macros/ltsugar.m4
-/macros/ltversion.m4
-/macros/lt~obsolete.m4
+/m4/libtool.m4
+/m4/ltoptions.m4
+/m4/ltsugar.m4
+/m4/ltversion.m4
+/m4/lt~obsolete.m4
 /ltmain.sh
 /libtool

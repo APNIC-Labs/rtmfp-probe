@@ -1,0 +1,206 @@
+Convert from wireshark value to binary with:
+    perl -ne 'chomp; my $in = $_; my $out = join("", map {chr(hex($_))} split(":",$in)); print $out;' > /tmp/encrypted.dat
+
+decrypt initial packet with:
+    openssl aes-128-cbc -in /tmp/encrypted.dat -d -iv 00000000000000000000000000000000 -K 41646F62652053797374656D73203032 -nopad | hexdump -C
+
+first packet:
+
+7e:c6:0d:ab     == ssid (word1 ^ word2 ^ session_id) = 0
+48:a2:a6:6b     == word1
+36:64:ab:c0     == word2
+
+encrypted = 48:a2:a6:6b:36:64:ab:c0:af:23:e0:c8:96:34:11:8f:0d:42:38:63:f9:88:da:53:ac:9c:2f:0b:ac:bf:b1:23:84:47:bf:5b:9f:f3:05:fa:eb:82:f6:d3:1e:af:ee:29
+
+00000000  99 f9 0b 13 2d 30 00 27  16 15 0a 72 74 6d 66 70  |....-0.'...rtmfp|
+00000010  3a 2f 2f 63 63 2e 72 74  6d 66 70 2e 6e 65 74 12  |://cc.rtmfp.net.|
+00000020  af 71 85 59 bb ee a2 7a  12 5b 08 23 6c 43 18 ff  |.q.Y...z.[.#lC..|
+
+chksum = 99f9
+flags = 0x0b = 0b00001011 TS=1 TSE=0 MOD=11
+timestamp = 0x132d
+
+-----
+Initiator Hello chunk
+                                   16 15 0a 72 74 6d 66 70  |        ...rtmfp|
+00000010  3a 2f 2f 63 63 2e 72 74  6d 66 70 2e 6e 65 74 12  |://cc.rtmfp.net.|
+00000020  af 71 85 59 bb ee a2 7a  12 5b 08 23 6c 43 18
+
+epdLength = 22
+
+endpointDescriptor = 0x15 0x0a rtmfp://cc.rtmfp.net
+    0x15 = option size
+    0x0a = ancilliary data (utf-8 URI)
+tag = 12 af 71 85 59 bb ee a2  7a 12 5b 08 23 6c 43 18
+    cryptorandom
+
+50:58:ee:b6 ssid = 0
+
+encrypted = 97:6d:54:b1:c7:35:ba:07:7a:66:81:cf:62:b4:dd:4a:c8:73:80:cd:bc:7b:27:38:9d:10:3c:77:5c:c3:78:04:a9:71:c3:c4:db:d7:ef:0c:29:20:72:ec:3e:f1:1e:cc:61:99:10:58:3e:74:65:f5:b3:1a:ed:1f:64:64:81:79:80:27:82:5b:f1:60:90:4c:ec:08:29:a6:f0:c2:9e:34:d3:d0:dd:06:7c:44:73:0e:b7:97:13:aa:4f:da:a8:3f:da:15:38:ef:93:f3:f4:88:50:fa:a5:07:87:c2:9a:fb:97:96:70:57:1e:14:d1:f2:0f:67:63:21:67:40:01:3a:41:ab:93:11:89:9e:44:37:e3:a6:a2:53:ae:b8:88:57:df:19:b7:f0:fd:44:75:66:67:7a:00:d7:63:e5:c4:04:04:f3:89:4f:db:53:48:42:65:58:06:f6:c9:73:17:e4
+
+00000000  f0 bc 0b 37 45 70 00 9f  10 12 af 71 85 59 bb ee  |...7Ep.....q.Y..|
+00000010  a2 7a 12 5b 08 23 6c 43  18 40 9c 24 e2 0c e1 cb  |.z.[.#lC.@.$....|
+00000020  9f 51 c3 89 31 04 c9 96  7e 31 f1 72 e8 b7 96 5f  |.Q..1...~1.r..._|
+00000030  eb 34 e6 02 36 06 58 67  8a 54 9b 98 d4 38 e1 92  |.4..6.Xg.T...8..|
+00000040  e4 bb fd 04 d4 ba 9c 64  d0 f8 47 f6 7c 80 72 00  |.......d..G.|.r.|
+00000050  4f 0d 9c 3a 87 f0 3e f8  e4 7a 01 0a 41 0e 9b 86  |O..:..>..z..A...|
+00000060  82 f1 b1 d8 d7 2e 18 45  26 24 1f 19 e1 94 a6 20  |.......E&$..... |
+00000070  8f 2d 1e 18 ab 76 92 d7  6a e3 19 43 00 ae c3 45  |.-...v..j..C...E|
+00000080  b9 75 df 28 58 30 dc 83  5f 6f 5a b9 fe bf f1 cd  |.u.(X0.._oZ.....|
+00000090  42 bc e9 5f 82 f1 38 4b  fe ea 7e 25 9a 09 02 15  |B.._..8K..~%....|
+000000a0  02 02 15 05 02 15 0e ff  ff ff ff ff ff ff ff ff  |................|
+
+checksum=f0bc
+flags = 0000 1011
+    TS=1 TSE=0 MOD=3
+timestamp=3745
+
+-----
+Responder Hello chunk
+    tag echoed back
+    cookie length 0x40
+                                                 9c 24 e2 0c e1 cb  |          .$....|
+        00000020  9f 51 c3 89 31 04 c9 96  7e 31 f1 72 e8 b7 96 5f  |.Q..1...~1.r..._|
+        00000030  eb 34 e6 02 36 06 58 67  8a 54 9b 98 d4 38 e1 92  |.4..6.Xg.T...8..|
+        00000040  e4 bb fd 04 d4 ba 9c 64  d0 f8 47 f6 7c 80 72 00  |.......d..G.|.r.|
+        00000050  4f 0d 9c 3a 87 f0 3e f8  e4 7a                    |O..:..>..z      |
+
+    responderCertificate
+                                             01 0a 41 0e 9b 86  |          ..A...|
+    00000060  82 f1 b1 d8 d7 2e 18 45  26 24 1f 19 e1 94 a6 20  |.......E&$..... |
+    00000070  8f 2d 1e 18 ab 76 92 d7  6a e3 19 43 00 ae c3 45  |.-...v..j..C...E|
+    00000080  b9 75 df 28 58 30 dc 83  5f 6f 5a b9 fe bf f1 cd  |.u.(X0.._oZ.....|
+    00000090  42 bc e9 5f 82 f1 38 4b  fe ea 7e 25 9a 09 02 15  |B.._..8K..~%....|
+    000000a0  02 02 15 05 02 15 0e                              |.......         |
+        01 0a           Accepts ancilliary data in endpoint descriptors (lucky, that!)
+        41 0e           Extra randomness
+        02 15 02        Supported ephemeral DH group = 02
+        02 15 05        Supported ephemeral DH group = 05
+        02 15 0e        Supported ephemeral DH group = 0e
+
+-----
+IIKeying chunk
+
+24:d1:63:c3 ssid = 0
+
+encrypted = 10:d2:6a:8b:34:03:09:48:0e:df:2a:23:89:38:f2:c4:3d:76:c6:f4:d4:b8:6f:f1:2f:a9:79:9f:ba:8c:7d:bd:e8:71:b0:64:33:37:ad:3e:2e:ce:22:af:66:83:ac:c0:5b:7a:86:6b:23:ca:6d:a0:92:fd:f3:ac:0a:1d:f7:66:5d:cf:d0:82:64:46:6d:14:3d:3f:e9:25:e6:3e:a5:29:65:a6:32:db:a5:8d:0c:f3:6e:65:90:d4:39:2f:e4:c1:ac:96:2b:8e:47:f9:c3:40:e2:d9:71:49:9f:28:c2:48:3e:d7:87:ba:e2:b9:d0:c5:77:90:88:0c:cc:5a:b8:6c:9e:2e:cc:01:05:3a:76:3e:16:b6:7d:6d:35:49:3e:82:cb:98:31:02:72:40:f5:b5:44:09:5c:26:88:ae:bd:c8:01:7e:e6:22:9e:85:67:96:d6:40:df:1d:2e:8f:db:ac:60:a0:0c:f6:e6:f8:05:96:8f:0f:23:e9:32:2e:5d:34:23:9e:a6:fc:6b:91:be:ba:9d:3e:00:03:96:94:e4:70:84:af:dd:11:1e:08:3d:44:9b:2c:a0:1c:04:d2:a1:55:b9:da:5b:c7:11:88:04:9d:5c:bf:d7:ec:7f:2d:db:b8:f7:16:6d:26:e1:f7:2b:89:cd:e8:1e:ed:b8:8a:93:d2:4f:63:1e:41:12:3e:4a:3e:fd:a9:0c:2e:6f:0f:6e:d2:cc:8d:9d:d0:75:4b:86:6d:b1:c3:3d:24:ad:28:21:a4:d8:0b:d0:91:04:60:ca:a7:9d:3a:7a:78:5a:0d:6c:19
+00000000  ac 13 0b 13 68-38 01 19- 02 00 00 00-40 9c 24 e2  |....h8......@.$.|
+00000010  0c e1 cb 9f 51 c3 89 31  04 c9 96 7e 31 f1 72 e8  |....Q..1...~1.r.|
+00000020  b7 96 5f eb 34 e6 02 36  06 58 67 8a 54 9b 98 d4  |.._.4..6.Xg.T...|
+00000030  38 e1 92 e4 bb fd 04 d4  ba 9c 64 d0 f8 47 f6 7c  |8.........d..G.||
+00000040  80 72 00 4f 0d 9c 3a 87  f0 3e f8 e4 7a-81 04_81  |.r.O..:..>..z...|
+00000050  02-1d 02 89 f7 ea 81 29  23 cc 71 86 1b 6e 5a a4  |.......)#.q..nZ.|
+00000060  24 a8 52 c3 92 2c c0 d2  74 41 2e 82 73 76 f2 75  |$.R..,..tA..sv.u|
+00000070  9d 21 aa 4a 65 14 02 ec  de 2f 00 79 98 6b 76 28  |.!.Je..../.y.kv(|
+00000080  8b 10 1d 8c d3 a7 36 9a  87 4f 7a 88 57 b7 2f 25  |......6..Oz.W./%|
+00000090  b0 1d 2e 9c 54 d6 59 92  94 10 07 9f 3d 04 64 bf  |....T.Y.....=.d.|
+000000a0  e2 37 5d 15 45 71 47 19  86 32 06 85 8f 2a 94 88  |.7].EqG..2...*..|
+000000b0  de e5 87 ed e6 fc 4e be  53 f4 bf e2 a5 88 e1 82  |......N.S.......|
+000000c0  66 c4 76 96 2e c7 0e ae  40 77 a1 26 b7 c3 93 35  |f.v.....@w.&...5|
+000000d0  5e a6 e1-4c-02 1d 02-41  0e bf 53 6b 12 75 1f f5  |^..L...A..Sk.u..|
+000000e0  ab ef a3 74 b5 f0 e8 71  e9 45 e5 42 78 0a 89 c0  |...t...q.E.Bx...|
+000000f0  d9 49 54 ab 37 7b 99 45  8d e8 5a a0 32 f0 71 ad  |.IT.7{.E..Z.2.q.|
+00000100  b0 91 94 fd dd 44 35 5d  95 65 cc 28 f7 14 0d 91  |.....D5].e.(....|
+00000110  e2 24 c6 11 b1 39 01 c9  3d-03 1a 02 0a 02 1e 02  |.$...9..=.......|
+00000120  58 ff ff ff ff ff ff ff  ff ff ff ff ff ff ff ff  |X...............|
+
+flags = 00001011
+          MOD=11 TSE=0 TS=1
+
+    session ID = 0x02000000
+    cookie echo
+    certificate VLU length = 0x84
+        certificate option VLU length = 0x82
+        group 2 static DH key, 89 f7 ... a6 e1
+    session key initiator VLU length = 0x4c
+        02 1d 02 = select group 2 (static I, ephemeral R)
+        41 0e ... extra randomness
+        03 1a 02 0a = HMAC negotiation (will send on request, length 0x0a = 10)
+        02 1e 02    = Session Sequence Number negotiation (will send on request)
+    58 = X = no signature
+
+-----
+7d:fe:d0:ff = ssid 0x02000000
+
+a3:89:4c:d3:dc:77:9c:2c:80:c9:6b:ff:51:d0:10:f4:2e:18:04:22:a1:a7:c8:b0:77:24:24:84:b7:31:7f:aa:02:63:e8:62:57:ae:f7:2b:19:b7:37:7f:3c:71:61:e6:66:1b:8d:88:cc:63:53:b1:36:88:55:a1:71:c8:d6:67:8a:25:2c:43:da:69:1b:f7:39:28:8e:82:4e:32:8b:75:da:f1:ee:b6:61:7f:eb:06:f0:fd:d9:63:1a:fc:8e:27:ca:d5:d3:ea:b9:9c:0d:69:6e:cc:09:54:b5:66:02:f1:4d:08:bf:d8:42:8c:42:e4:94:86:4e:29:b9:34:09:75:b4:c5:91:c5:c5:1d:76:24:e4:0f:51:b9:cf:30:75:17:2a:60:6d:47:b6:88:13:cb:03:a9:3b:aa:b0:cb:ff:16
+00000000  02 96 0b 37 81 78 00 92  45 02 00 00 81 0b-03 1a  |...7.x..E.......|
+00000010  00 00 02 1e 00 81 02 0d  02 fa b4 f4 b7 c3 85 b5  |................|
+00000020  e3 54 b6 84 cf 11 18 33  37 c3 6c a7 a9 48 40 b9  |.T.....37.l..H@.|
+00000030  f3 aa 6b 92 fc e6 b3 42  47 f9 49 b7 26 df e9 58  |..k....BG.I.&..X|
+00000040  2d a7 52 21 29 1f 12 26  65 e2 ad 07 58 8a b2 2c  |-.R!)..&e...X..,|
+00000050  8e c4 53 63 70 fe d4 3b  28 69 34 3e fa 5f ba 82  |..Scp..;(i4>._..|
+00000060  11 9e 5d fe 25 4d 67 ec  d7 86 38 2a 96 53 ae e6  |..].%Mg...8*.S..|
+00000070  54 42 c4 c1 a6 1f f0 75  ea 83 43 5f 8b d8 4d 3b  |TB.....u..C_..M;|
+00000080  de 4a a6 91 ba b9 2f 50  c6 ae b4 35 b2 b1 52 cd  |.J..../P...5..R.|
+00000090  4b f1 04 7e 5e d1 58 41  db-58 ff ff ff ff ff ff  |K..~^.XA.X......|
+
+00000000  cd ff 03 78 00 92 00 00  00 0b 81 0b 03 1a 00 00  |...x............|
+00000010  02 1e 00 81 02 0d 02 6f  7f 00 82 a9 2f 35 eb ae  |.......o..../5..|
+00000020  f4 2d 59 29 df d7 d5 f8  25 10 28 93 87 78 cc 92  |.-Y)....%.(..x..|
+00000030  d6 77 7d 2f 86 23 76 61  04 c0 bb bc db 14 4e 07  |.w}/.#va......N.|
+00000040  ec 24 6f 25 5d 64 7f f4  5b 07 0a d6 6d 4f d3 6c  |.$o%]d..[...mO.l|
+00000050  24 b7 3f 2e be cf c5 09  1c a1 d7 0a 12 4c 74 d9  |$.?..........Lt.|
+00000060  41 75 7d 11 ea 00 f4 15  19 41 d1 06 38 14 f9 a8  |Au}......A..8...|
+00000070  41 b7 bf 85 2a e2 1f b2  15 bd d0 65 1b ab 75 36  |A...*......e..u6|
+00000080  20 de 64 f2 58 b2 c8 25  bf 25 e5 02 c6 d4 7c fa  | .d.X..%.%....|.|
+00000090  e1 51 db d5 4e 1a 50 58  ff ff ff ff ff ff ff ff  |.Q..N.PX........|
+
+chksum = 0296
+flags = 0b
+flags = 0000 1011
+    TS=1 TSE=0 MOD=3
+timestamp=3781
+0x92 bytes of RIKeying chunk
+    responder ssid = 0x45020000
+    skrc length = 139 0x8b
+        03 1a 00 00  HMAC = never, no length
+        02 1e 00     session sequence = never
+        81 02 0d ... ephemeral key, group ID 2 (remainder)
+    signature = 'X' empty
+
+------
+ my crap
+
+4c:5d:5d:22
+21:95:59:73:6d:c8:04:51:2b:b4:56:e1:5f:72:f4:6e:f9:5b:13:7a:6f:7f:e5:f7:43:ef:96:b2:36:5f:51:b5:f9:6a:2f:45:04:e1:ad:44:e8:3f:d4:54:60:c1:b4:ea:d8:60:93:91:b6:b4:e9:06:e5:50:2b:d7:00:9a:0b:46:a7:c1:1f:6d:c7:44:8c:25:7c:21:bc:6b:ff:e4:6a:15:b5:e7:9e:0e:9b:4e:02:8c:21:83:29:45:46:6d:4f:a8:1e:49:79:9b:6e:45:9f:fd:f3:69:83:0b:0c:97:c2:52
+
+------- RTMP messages inside RTMFP flows ------
+
+RTMFP Packet
+    sessionID: c4:a3:22:f0
+    checksum: 9e:97
+    flags: 89 (10001001, TC, TS, MOD=1)
+    timestamp: 00:ac
+    Chunk type: 10 (User Data
+        length: 01:39
+        flags: 80 (10000000, OPT)
+        flowID: 02
+        seq#: 01
+        fsnOffset: 01
+        Option List
+            [0]
+                length: 05
+                type: 00 (Metadata)
+                value: 54:43:04:00 (TC 04 00, stream ID present, stream ID: 0)
+            [1]
+                marker: 00
+        RTMP message
+            messageType: 14 (Invoke)
+            timestamp: 00:00:00:00
+            [
+                "connect"
+                doubleval: 1.0
+                {
+                    "app": ""
+                    "flashVer": "MAC 13,0,0,214"
+                    "swfUrl": "http://the-wanderers.org/cc.swf"
+                    "tcUrl": "rtmfp://cc.rtmfp.net"
+                    "fpad": false
+                    "capabilities": 235.0
+                    "audioCodecs": 3575.0
+                    "videoCodecs": 252.0
+                    "videoFunction": 1.0
+                    "pageUrl": "http://the-wanderers.org/cc.swf"
+                    "objectEncoding": 3.0
+                }
+            ]
