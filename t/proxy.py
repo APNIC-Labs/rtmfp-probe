@@ -8,12 +8,11 @@ import struct
 from binascii import hexlify, unhexlify
 
 UDP_IP='50.57.70.211'
-UDP_IP='127.0.0.1'
 UDP_PORT=1935 #macromedia-fcs
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(('', 0))
-print 'Listening on port ' + str(sock.getsockname()[1])
+print 'Client listening on port ' + str(sock.getsockname()[1])
 
 def carry_around_add(a, b):
     c = a + b
@@ -114,100 +113,94 @@ def vwrite(value):
         value = value >> 7
     return msg
 
-epd = "\x16\x15\x0artmpf://cc.rtmfp.net"
+cekey = crypto.DEFAULT_KEY
+cdkey = crypto.DEFAULT_KEY
+sekey = crypto.DEFAULT_KEY
+sdkey = crypto.DEFAULT_KEY
+while True:
+    msg, addr = sock.recvfrom(1024)
+    print addr
+    break
 
-IHello = prep("\x30" + struct.pack('!H', len(epd) + 16) + epd + "0123456789ABCDEF", 0, 3, crypto.DEFAULT_KEY)
-sock.sendto(IHello, (UDP_IP, UDP_PORT))
+#epd = "\x16\x15\x0artmpf://cc.rtmfp.net"
 
-msg, addr = sock.recvfrom(1024)
-data = unwrap(msg, crypto.DEFAULT_KEY)
-assert(data is not None)
-assert(len(data['chunks']) == 1)
-RHello = data['chunks'][0]
-if RHello[0] != 0x70: print hexlify(msg), data
-assert(RHello[0] == 0x70)
-assert(RHello[1] == len(RHello[2]))
-(taglen, msg) = vread(RHello[2])
-assert(taglen == 16)
-assert(msg[:16] == '0123456789ABCDEF')
-(cookielen, msg) = vread(msg[16:])
-cookie = msg[:cookielen]
+#IHello = prep("\x30" + struct.pack('!H', len(epd) + 16) + epd + "0123456789ABCDEF", 0, 3, crypto.DEFAULT_KEY)
+#sock.sendto(IHello, (UDP_IP, UDP_PORT))
+
+#msg, addr = sock.recvfrom(1024)
+#data = unwrap(msg, crypto.DEFAULT_KEY)
+#assert(data is not None)
+#assert(len(data['chunks']) == 1)
+#RHello = data['chunks'][0]
+#if RHello[0] != 0x70: print hexlify(msg), data
+#assert(RHello[0] == 0x70)
+#assert(RHello[1] == len(RHello[2]))
+#(taglen, msg) = vread(RHello[2])
+#assert(taglen == 16)
+#assert(msg[:16] == '0123456789ABCDEF')
+#(cookielen, msg) = vread(msg[16:])
+#cookie = msg[:cookielen]
 
 # ignore RHello options, the server will be using an ephemeral key
-dh = DiffieHellman()
-pcert = '\x1d\x02' + packl(dh.publicKey)
-pcert = vwrite(len(pcert)) + pcert
-sknc = '\x02\x1d\x02\x03\x1a\x00\x00\x02\x1e\x00'
-msg = '1234' + vwrite(cookielen) + cookie + vwrite(len(pcert)) + pcert + vwrite(len(sknc)) + sknc + 'X'
+#dh = DiffieHellman()
+#pcert = '\x1d\x02' + packl(dh.publicKey)
+#pcert = vwrite(len(pcert)) + pcert
+#sknc = '\x02\x1d\x02\x03\x1a\x00\x00\x02\x1e\x00'
+#msg = '1234' + vwrite(cookielen) + cookie + vwrite(len(pcert)) + pcert + vwrite(len(sknc)) + sknc + 'X'
 
-IIKeying = prep("\x38" + struct.pack('!H', len(msg)) + msg, 0, 3, crypto.DEFAULT_KEY)
-sock.sendto(IIKeying, (UDP_IP, UDP_PORT))
+#IIKeying = prep("\x38" + struct.pack('!H', len(msg)) + msg, 0, 3, crypto.DEFAULT_KEY)
+#sock.sendto(IIKeying, (UDP_IP, UDP_PORT))
 
-msg, addr = sock.recvfrom(1024)
-data = unwrap(msg, crypto.DEFAULT_KEY)
-assert(data is not None)
-assert(len(data['chunks']) == 1)
-RIKeying = data['chunks'][0]
-assert(RIKeying[0] == 0x78)
-assert(RIKeying[1] == len(RIKeying[2]))
-remote_ssid = struct.unpack('!L', RIKeying[2][:4])[0]
-(skfcLength, msg) = vread(RIKeying[2][4:])
-skfc = msg[:skfcLength]
-kdata = skfc
-shared = None
-while len(kdata) > 3:
-    (optlen, kdata) = vread(kdata)
-    (opttype, odata) = vread(kdata[:optlen])
-    if opttype == 0x0d:
-        (_, odata) = vread(odata) # group ID
-        dh.genKey(long(hexlify(odata), 16))
-        shared = packl(dh.sharedSecret)
-    kdata = kdata[optlen:]
-assert(shared is not None)
+#msg, addr = sock.recvfrom(1024)
+#data = unwrap(msg, crypto.DEFAULT_KEY)
+#assert(data is not None)
+#assert(len(data['chunks']) == 1)
+#RIKeying = data['chunks'][0]
+#assert(RIKeying[0] == 0x78)
+#assert(RIKeying[1] == len(RIKeying[2]))
+#remote_ssid = struct.unpack('!L', RIKeying[2][:4])[0]
+#(skfcLength, msg) = vread(RIKeying[2][4:])
+#skfc = msg[:skfcLength]
+#kdata = skfc
+#shared = None
+#while len(kdata) > 3:
+    #(optlen, kdata) = vread(kdata)
+    #(opttype, odata) = vread(kdata[:optlen])
+    #if opttype == 0x0d:
+        #(_, odata) = vread(odata) # group ID
+        #dh.genKey(long(hexlify(odata), 16))
+        #shared = packl(dh.sharedSecret)
+    #kdata = kdata[optlen:]
+#assert(shared is not None)
 #print 'sknc:', hexlify(sknc)
 #print 'skfc:', hexlify(skfc)
 #print 'shared:', hexlify(shared)
-(enc,dec) = crypto.makeKeys(sknc, skfc, shared)
+#(enc,dec) = crypto.makeKeys(sknc, skfc, shared)
 #print hexlify(enc), hexlify(dec)
 
 # we're up and running, send an RTMP message
-invokeConnect = ('\x80' + # flags
-                '\x02\x01\x01' + # flow ID, seq#, fnsOffset
-                '\x05\x00TC\x04\x00\x00' + # metadata option
-                '\x14\x00\x00\x00\x00' + # RTMP.Invoke(AMF0)
-                '\x02\x00\x07connect' + # connect
-                '\x00\x3f\xf0\x00\x00\x00\x00\x00\x00' + # 1.0
-                '\x03' + # {
-                '\x00\x03app\x02\x00\x00' + # app: ""
-                '\x00\x00\x09') # }
-Invoke = prep('\x10' + struct.pack('!H', len(invokeConnect)) + invokeConnect, remote_ssid, 1, enc)
-sock.sendto(Invoke, (UDP_IP, UDP_PORT))
+#invokeConnect = ('\x80' + # flags
+                #'\x02\x01\x01' + # flow ID, seq#, fnsOffset
+                #'\x05\x00TC\x04\x00\x00' + # metadata option
+                #'\x14\x00\x00\x00\x00' + # RTMP.Invoke(AMF0)
+                #'\x02\x00\x07connect' + # connect
+                #'\x00\x3f\xf0\x00\x00\x00\x00\x00\x00' + # 1.0
+                #'\x03' + # {
+                #'\x00\x03app\x02\x00\x00' + # app: ""
+                #'\x00\x00\x09') # }
+#Invoke = prep('\x10' + struct.pack('!H', len(invokeConnect)) + invokeConnect, remote_ssid, 1, enc)
+#sock.sendto(Invoke, (UDP_IP, UDP_PORT))
 
-while True:
-    msg, addr = sock.recvfrom(1024)
-    data = unwrap(msg, dec)
-    print 'RTMP response:', data
-    for ch in data['chunks']:
-        if ch[0] == 0x10: # UserData, acknowledge
-            bobs = ch[2][1:]
-            (fid, bobs) = vread(bobs)
-            (seq, bobs) = vread(bobs)
-            echo = vwrite(fid) + '\x7f' + vwrite(seq)
-            ack = ('\x51\x00' + vwrite(len(echo)) + echo)
-            Ack = prep(ack, remote_ssid, 1, enc)
-            sock.sendto(Ack, (UDP_IP, UDP_PORT))
-
-if __name__=="__fred__":
-    a = DiffieHellman()
-    b = DiffieHellman()
-
-    a.genKey(b.publicKey)
-    b.genKey(a.publicKey)
-
-    if(a.getKey() == b.getKey()):
-        print "Shared keys match."
-        print "Key:", hexlify(a.key)
-    else:
-        print "Shared secrets didn't match!"
-        print "Shared secret: ", a.genSecret(b.publicKey)
-        print "Shared secret: ", b.genSecret(a.publicKey)
+#while True:
+    #msg, addr = sock.recvfrom(1024)
+    #data = unwrap(msg, dec)
+    #print 'RTMP response:', data
+    #for ch in data['chunks']:
+        #if ch[0] == 0x10: # UserData, acknowledge
+            #bobs = ch[2][1:]
+            #(fid, bobs) = vread(bobs)
+            #(seq, bobs) = vread(bobs)
+            #echo = vwrite(fid) + '\x7f' + vwrite(seq)
+            #ack = ('\x51\x00' + vwrite(len(echo)) + echo)
+            #Ack = prep(ack, remote_ssid, 1, enc)
+            #sock.sendto(Ack, (UDP_IP, UDP_PORT))

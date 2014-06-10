@@ -44,12 +44,12 @@ typedef struct Request {
 
     union {
         struct {
-            uint8_t timeCritical         :1; // "TC"
-            uint8_t timeCriticalReverse  :1; // "TCR"
-            uint8_t reserved             :2; // "rsv"
-            uint8_t timestampPresent     :1; // "TS"
-            uint8_t timestampEchoPresent :1; // "TSE"
             uint8_t mode                 :2; // "MOD"
+            uint8_t timestampEchoPresent :1; // "TSE"
+            uint8_t timestampPresent     :1; // "TS"
+            uint8_t reserved             :2; // "rsv"
+            uint8_t timeCriticalReverse  :1; // "TCR"
+            uint8_t timeCritical         :1; // "TC"
         } __attribute__((packed)) flags;
         uint8_t byteval;
     } flags;
@@ -153,14 +153,23 @@ static int initPacket(Request *request, uint8_t **bufptr, int *remaining) {
     // 250Hz clock, truncated to last 16 bits
     uint16_t timestamp = (clock() * 250 / CLOCKS_PER_SEC) & 0xffff;
 
-    uint8_t flags = (3 - (request->flags.flags.mode % 3));
+    uint8_t flags = 0;
+    switch (request->flags.flags.mode) {
+        case 1: flags = 2; break;
+        case 2: flags = 1; break;
+        case 3: flags = 3; break;
+    }
+
+    flags |= 0x08;
+    if (request->flags.flags.timeCritical) flags |= 0x40;
+    printf("Setting flags: %02x (inc. flags: %d)\n", flags, request->flags.flags.mode);
 
     int consumed = 0;
     consumed += 4;                      // skip ssid, can't write it yet
     consumed += 2;                      // skip checksum, can't compute it yet
-    (*bufptr)[consumed++] = flags;      // invert responder/initiator, echo startup
-    //(*bufptr)[consumed++] = timestamp >> 8;
-    //(*bufptr)[consumed++] = timestamp & 0xff;
+    (*bufptr)[consumed++] = flags;
+    (*bufptr)[consumed++] = timestamp >> 8;
+    (*bufptr)[consumed++] = timestamp & 0xff;
 
     (*bufptr) += consumed;
     (*remaining) -= consumed;
@@ -189,7 +198,7 @@ static int finalisePacket(Request *request, uint8_t *buffer, int *length) {
     bzero(iv, 16);
     AES_KEY key;
     AES_set_encrypt_key(request->session->encryptKey, 128, &key);
-    printf("Encrypting packet with key:\n"); hex_print(request->session->encryptKey, 16);
+    //printf("Encrypting packet with key:\n"); hex_print(request->session->encryptKey, 16);
     AES_cbc_encrypt(buffer+4, buffer+4, *length-4, &key, iv, AES_ENCRYPT);
 
     // Write the scrambled SSID in
@@ -390,7 +399,7 @@ int handle_IIKeying(Request *request, uint8_t *payload, int length) {
     unsigned char *sharedKey = malloc(keySize);
     keySize = DH_compute_key(sharedKey, them, myKey);
     // if keySize == -1, fail
-    printf("Shared key:\n"); hex_print(sharedKey, keySize);
+    //printf("Shared key:\n"); hex_print(sharedKey, keySize);
 
     // the skic points now to the SKFC component of the crypto exchange
     // the SKNC component needs to be populated
@@ -425,18 +434,13 @@ int handle_IIKeying(Request *request, uint8_t *payload, int length) {
     HMAC(EVP_sha256(), sknc, skncSize, skic, skicLength, hmac_pad, NULL);
     HMAC(EVP_sha256(), sharedKey, keySize, hmac_pad, 32, decrypt_hmac, NULL);
 
-    printf("SKNC:\n");
-    hex_print(sknc, skncSize);
-    printf("SKFC:\n");
-    hex_print(skic, skicLength);
-    printf("Created keys:\n");
-    hex_print(encrypt_hmac, 16);
-    hex_print(decrypt_hmac, 16);
-
-    //printf("Compute keys: SKNC\n");
+    //printf("SKNC:\n");
     //hex_print(sknc, skncSize);
-    //printf("Compute keys: SKFC\n");
+    //printf("SKFC:\n");
     //hex_print(skic, skicLength);
+    //printf("Created keys:\n");
+    //hex_print(encrypt_hmac, 16);
+    //hex_print(decrypt_hmac, 16);
 
     // Free up all the ephemeral data so errors become easier to handle
     free(sharedKey);
@@ -561,8 +565,14 @@ int handle_UserData(Request *request, uint8_t *payload, int length)
                 char result[] = "\x14\x00\x00\x00\x00"          // invoke, timestamp
                                 "\x02\x00\x07_result"           // command name
                                 "\x00\x3f\xf0\0\0\0\0\0\0"      // transaction ID 1.0
-                                "\x03\x00\x00\x09"              // connection properties (none)
-                                "\x03\x00\x00\x09";             // response values (none)
+                                "\x05"                          // connection properties (NULL)
+                                "\x03"                          // response {
+                                    "\x00\x0e""objectEncoding\x00\0\0\0\0\0\0\0\0"
+                                    "\x00\x04""motd\x02\x00\x1b""Adobe Chicago IL USA server"
+                                    "\x00\x0b""description\x02\x00\x14""Connection succeeded"
+                                    "\x00\x05""level\x02\x00\x06""status"
+                                    "\x00\x04""code\x02\x00\x1d""NetConnection.Connect.Success"
+                                "\x00\x00\x09";                 // }
                 memcpy(bufptr, result, sizeof(result) - 1);
                 bufptr += sizeof(result) - 1; remaining -= sizeof(result) - 1;
                 printf("responding to connect call\n");
@@ -670,13 +680,13 @@ int rtmfpReadDatagram(RtmfpService *service)
 
     unsigned char iv[16];
     AES_KEY key;
-    printf("AES decryption key:\n");
-    hex_print(request.session->decryptKey, 16);
+    //printf("AES decryption key:\n");
+    //hex_print(request.session->decryptKey, 16);
     AES_set_decrypt_key(request.session->decryptKey, 128, &key);
     bzero(iv, 16);
     AES_cbc_encrypt(buffer+4, buffer+4, bytes-4, &key, iv, AES_DECRYPT);
-    printf("Decrypted block:\n");
-    hex_print(buffer, bytes);
+    //printf("Decrypted block:\n");
+    //hex_print(buffer, bytes);
 
     bufptr = buffer + 4;
     remaining = bytes - 4;
@@ -689,8 +699,7 @@ int rtmfpReadDatagram(RtmfpService *service)
     remaining -= 2;
     bufptr += 2;
 
-    // The flags are bit-reversed, crazy, so we apply just as much crazy unreversing them
-    request.flags.byteval = ((*bufptr * 0x0802LU & 0x22110LU) | (*bufptr * 0x8020LU & 0x88440LU)) * 0x10101LU >> 16; 
+    request.flags.byteval = *bufptr;
 
     printf("Flags: TC:%d TCR:%d rsv:%d TS:%d TSE:%d MOD:%d\n",
             request.flags.flags.timeCritical, request.flags.flags.timeCriticalReverse, request.flags.flags.reserved,
