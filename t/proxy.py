@@ -11,7 +11,7 @@ UDP_IP='50.57.70.211'
 UDP_PORT=1935 #macromedia-fcs
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(('', 0))
+sock.bind(('', 1935))
 print 'Client listening on port ' + str(sock.getsockname()[1])
 
 def carry_around_add(a, b):
@@ -117,10 +117,29 @@ cekey = crypto.DEFAULT_KEY
 cdkey = crypto.DEFAULT_KEY
 sekey = crypto.DEFAULT_KEY
 sdkey = crypto.DEFAULT_KEY
+caddr = None
 while True:
     msg, addr = sock.recvfrom(1024)
+    print repr(msg)
+    dkey = cdkey
+    ekey = sekey
+    target = (UDP_IP, UDP_PORT)
+    if addr[0] == UDP_IP:
+        dkey = sdkey
+        ekey = cekey
+        target = caddr
+    else:
+        caddr = addr
+    words = struct.unpack("!LLL", msg[:12])
+    ssid = words[0] ^ words[1] ^ words[2]
+    msg = crypto.decrypt(msg[4:], dkey)
+    # if it's a crypto exchange, replace it with my keying material
     print addr
-    break
+    msg = crypto.encrypt(msg, ekey)
+    words = struct.unpack("!LL", msg[:8])
+    ssid = ssid ^ words[0] ^ words[1]
+    msg = struct.pack("!L", ssid) + msg
+    sock.sendto(msg, target)
 
 #epd = "\x16\x15\x0artmpf://cc.rtmfp.net"
 
