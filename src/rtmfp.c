@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <ctype.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -87,13 +88,21 @@ void rtmfpDestroy(RtmfpService *service) {
 static void hex_print(const void* pv, size_t len)
 {
     const unsigned char * p = (const unsigned char*)pv;
+    char text[17];
+    bzero(text, 17);
     if (NULL == pv)
         printf("  NULL");
     else {
         printf("  ");
         size_t i = 0;
-        for (; i<len-1;++i)
-            printf("%02x%s", *p++, (i % 16 == 15) ? "\n  " : ":");
+        for (; i<len-1;++i) {
+            text[i % 16] = isprint(*p) ? *p : '.';
+            printf("%02x%s", *p++, (i % 16 == 15) ? "" : ":");
+            if (i % 16 == 15) {
+                printf("    %s\n  ", text);
+                bzero(text, 17);
+            }
+        }
         printf("%02x\n", *p++);
     }
 }
@@ -487,7 +496,8 @@ int handle_UserData(Request *request, uint8_t *payload, int length)
     if (length < 4) _error("truncated UserData packet", 0);
 
     uint8_t flags = *(payload++); length -= 1;
-    if ((flags & 0x80) == 0) _error("OPT flag MUST be set on UserData for RTMP", 0);
+    // apparently, OPT must only be set once
+    //if ((flags & 0x80) == 0) _error("OPT flag MUST be set on UserData for RTMP", 0);
 
     if (length < 3) _error("truncated UserData packet", 0);
     int flowID = vlu_read(&payload, &length);
@@ -511,7 +521,7 @@ int handle_UserData(Request *request, uint8_t *payload, int length)
 
     // UserData response chunk
     bufptr[0] = 0x10;
-    bufptr[3] = 0x80; // flags: OPT
+    bufptr[3] = flags & 0x80;
     lengthptr = (uint16_t *)(bufptr + 1);
     payloadLength = remaining - 3;
     bufptr += 4; remaining -= 4;
@@ -522,34 +532,37 @@ int handle_UserData(Request *request, uint8_t *payload, int length)
     vlu_write(seqN, &bufptr, &remaining);       // sequence number: hopefully the same as the other end
     vlu_write(1, &bufptr, &remaining);          // no resends, no future messages planned, but I can't say zero :-)
 
-    while (1) {
-        if (length < 3) _error("truncated UserData packet", 0);
-        int optlen = vlu_read(&payload, &length);
-        if (optlen == 0) break;
-        if (length < optlen) _error("truncated UserData packet", 0);
-        uint8_t *option = payload;
-        payload += optlen; length -= optlen;
-        int opt = vlu_read(&option, &optlen);
+    // write options back
+    if (flags & 0x80) {
+        while (flags & 0x80) {
+            if (length < 3) _error("truncated UserData packet", 0);
+            int optlen = vlu_read(&payload, &length);
+            if (optlen == 0) break;
+            if (length < optlen) _error("truncated UserData packet", 0);
+            uint8_t *option = payload;
+            payload += optlen; length -= optlen;
+            int opt = vlu_read(&option, &optlen);
 
-        if (opt == 0x00) {
-            // if it's not an RTMP packet, TODO: abort the connection
+            if (opt == 0x00) {
+                // if it's not an RTMP packet, TODO: abort the connection
 
-            // echo metadata back - share a stream ID with the remote end
-            vlu_write(optlen + 1, &bufptr, &remaining);
-            vlu_write(opt, &bufptr, &remaining);
-            memcpy(bufptr, option, optlen);
-            bufptr += optlen; remaining -= optlen;
+                // echo metadata back - share a stream ID with the remote end
+                vlu_write(optlen + 1, &bufptr, &remaining);
+                vlu_write(opt, &bufptr, &remaining);
+                memcpy(bufptr, option, optlen);
+                bufptr += optlen; remaining -= optlen;
+            }
         }
+
+        // Add a return flow association
+        int optlen = 2 + (flowID > 0x7f ? 1 : 0);
+        vlu_write(optlen, &bufptr, &remaining);  // opt length
+        vlu_write(0x0a, &bufptr, &remaining);    // opt type
+        vlu_write(flowID, &bufptr, &remaining);  // flow ID
+
+        // end of option list
+        vlu_write(0, &bufptr, &remaining);
     }
-
-    // Add a return flow association
-    int optlen = 2 + (flowID > 0x7f ? 1 : 0);
-    vlu_write(optlen, &bufptr, &remaining);  // opt length
-    vlu_write(0x0a, &bufptr, &remaining);    // opt type
-    vlu_write(flowID, &bufptr, &remaining);  // flow ID
-
-    // end of option list
-    vlu_write(0, &bufptr, &remaining);
 
     if (length < 5) _error("truncated RTMP packet in UserData chunk", 0);
 
@@ -557,7 +570,7 @@ int handle_UserData(Request *request, uint8_t *payload, int length)
     uint8_t rtmpType = *payload;
     payload += 5; length -= 5;
     switch (rtmpType) {
-        case 0x14:      // Invoke
+        case 0x14:      // AMF0 encoded command message
             if (length < 3) _error("truncated RTMP packet in UserData chunk", 0);
             // if the next 10 bytes are 02:00:07:63:6f:6e:6e:65:63:74 this is a "connect" call
             if (length >= 10 && memcmp(payload, "\x02\x00\x07""connect", 10) == 0) {
@@ -567,7 +580,7 @@ int handle_UserData(Request *request, uint8_t *payload, int length)
                                 "\x00\x3f\xf0\0\0\0\0\0\0"      // transaction ID 1.0
                                 "\x05"                          // connection properties (NULL)
                                 "\x03"                          // response {
-                                    "\x00\x0e""objectEncoding\x00\0\0\0\0\0\0\0\0"
+                                    "\x00\x0e""objectEncoding\x00\x40\x08\0\0\0\0\0\0"
                                     "\x00\x04""motd\x02\x00\x1b""Adobe Chicago IL USA server"
                                     "\x00\x0b""description\x02\x00\x14""Connection succeeded"
                                     "\x00\x05""level\x02\x00\x06""status"
@@ -581,6 +594,13 @@ int handle_UserData(Request *request, uint8_t *payload, int length)
                 hex_print(payload, length > 15 ? 15 : length);
                 return 1;  // just bail, don't know, won't respond
             }
+            break;
+        case 0x11:      // AMF3 encoded command message
+            // command name
+            // transaction ID
+            // parameter objects to end-of-block
+            printf("AMF3 block\n");
+            hex_print(payload-5, length+5);
             break;
         default:
             // just ignore it
