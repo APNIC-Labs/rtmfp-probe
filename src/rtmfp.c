@@ -17,6 +17,7 @@
 #include <openssl/rand.h>
 
 #include "rtmfp.h"
+#include "rtmp.h"
 
 // "Adobe Systems 02"
 const uint8_t defaultSessionKey[16] = {
@@ -491,6 +492,14 @@ int handle_IIKeying(Request *request, uint8_t *payload, int length) {
     return 1;
 }
 
+static int
+command_match(RTMPCommand *command, char *name)
+{
+    int n = strlen(name);
+    if (n != command->commandNameLength) return 0;
+    return memcmp(command->commandName, name, n) == 0;
+}
+
 int handle_UserData(Request *request, uint8_t *payload, int length)
 {
     if (length < 4) _error("truncated UserData packet", 0);
@@ -564,48 +573,58 @@ int handle_UserData(Request *request, uint8_t *payload, int length)
         vlu_write(0, &bufptr, &remaining);
     }
 
-    if (length < 5) _error("truncated RTMP packet in UserData chunk", 0);
+    RTMPCommand command;
+    if (RTMP_Command_Parse(&command, payload, length))
+        _error("invalid RTMP packet in UserData chunk", 0);
 
-    // payload now points to an RTMP packet
-    uint8_t rtmpType = *payload;
-    payload += 5; length -= 5;
-    switch (rtmpType) {
-        case 0x14:      // AMF0 encoded command message
-            if (length < 3) _error("truncated RTMP packet in UserData chunk", 0);
-            // if the next 10 bytes are 02:00:07:63:6f:6e:6e:65:63:74 this is a "connect" call
-            if (length >= 10 && memcmp(payload, "\x02\x00\x07""connect", 10) == 0) {
-                // arguments etc don't matter, just fill in a _result object
-                char result[] = "\x14\x00\x00\x00\x00"          // invoke, timestamp
-                                "\x02\x00\x07_result"           // command name
-                                "\x00\x3f\xf0\0\0\0\0\0\0"      // transaction ID 1.0
-                                "\x05"                          // connection properties (NULL)
-                                "\x03"                          // response {
-                                    "\x00\x0e""objectEncoding\x00\x40\x08\0\0\0\0\0\0"
-                                    "\x00\x04""motd\x02\x00\x1b""Adobe Chicago IL USA server"
-                                    "\x00\x0b""description\x02\x00\x14""Connection succeeded"
-                                    "\x00\x05""level\x02\x00\x06""status"
-                                    "\x00\x04""code\x02\x00\x1d""NetConnection.Connect.Success"
-                                "\x00\x00\x09";                 // }
-                memcpy(bufptr, result, sizeof(result) - 1);
-                bufptr += sizeof(result) - 1; remaining -= sizeof(result) - 1;
-                printf("responding to connect call\n");
-            } else {
-                printf("Unrecognised RTMP invoke call\n");
-                hex_print(payload, length > 15 ? 15 : length);
-                return 1;  // just bail, don't know, won't respond
-            }
-            break;
-        case 0x11:      // AMF3 encoded command message
-            // command name
-            // transaction ID
-            // parameter objects to end-of-block
-            printf("AMF3 block\n");
-            hex_print(payload-5, length+5);
-            break;
-        default:
-            // just ignore it
-            printf("Unknown RTMP packet type 0x%02x\n", rtmpType);
-            return 0;
+    if (command_match(&command, "connect")) {
+        // arguments etc don't matter, just fill in a _result object
+        char result[] = "\x14\x00\x00\x00\x00"          // invoke, timestamp
+                        "\x02\x00\x07_result"           // command name
+                        "\x00\x3f\xf0\0\0\0\0\0\0"      // transaction ID 1.0
+                        "\x05"                          // connection properties (NULL)
+                        "\x03"                          // response {
+                            "\x00\x0e""objectEncoding\x00\x40\x08\0\0\0\0\0\0"
+                            "\x00\x04""motd\x02\x00\x1b""Adobe Chicago IL USA server"
+                            "\x00\x0b""description\x02\x00\x14""Connection succeeded"
+                            "\x00\x05""level\x02\x00\x06""status"
+                            "\x00\x04""code\x02\x00\x1d""NetConnection.Connect.Success"
+                        "\x00\x00\x09";                 // }
+        memcpy(bufptr, result, sizeof(result) - 1);
+        bufptr += sizeof(result) - 1; remaining -= sizeof(result) - 1;
+        printf("responding to connect call\n");
+    } else if (command_match(&command, "setPeerInfo")) {
+        char result[] = "\x14\x00\x00\x00\x00"          // invoke, timestamp
+                        "\x02\x00\x08""onStatus"          // command name
+                        "\0\0\0\0\0\0\0\0\0"            // transaction ID
+                        "\x05"                          // connection properties (NULL)
+                        "\x03"                          // info {
+                            "\x00\x05""level\x02\x00\x06""status"
+                            "\x00\x04""code\x02\x00\x1a""NetConnection.Labs.Results"
+                            "\x00\x09""addresses\x02";
+        memcpy(bufptr, result, sizeof(result) - 1);
+        bufptr += sizeof(result) - 1; remaining -= sizeof(result) - 1;
+        // need to concatenate the given addresses into a single string
+        int addrLen = command.argumentLength;
+        uint8_t *addrs = command.arguments;
+        hex_print(addrs, addrLen);
+        while (addrLen > 0) {
+            addrLen--;
+            uint8_t type = *(addrs++);
+            printf("type: %02x\n", type);
+            if (type == 0x05) continue;
+            if (type != 0x02) _error("unknown argument type", 0);
+            uint16_t len = ntohs(*(uint16_t *)addrs);
+            if (len > addrLen) _error("truncated arguments", 0);
+            hex_print(addrs + 2, len);
+            addrLen -= len + 2;
+            addrs += len + 2;
+        }
+        return 0;
+    } else {
+        printf("Unrecognised RTMP invoke call\n");
+        hex_print(payload, length > 15 ? 15 : length);
+        return 0;  // just bail, don't know, won't respond
     }
 
     *lengthptr = htons(payloadLength - remaining);
