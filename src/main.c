@@ -54,7 +54,7 @@ int main(int argc, char **argv) {
         RtmfpService *service = rtmfpInitialise(sockfd);
 
         while (1) {
-            printf("datagram: %d\n", rtmfpReadDatagram(service));
+            rtmfpReadDatagram(service);
         }
     }
 

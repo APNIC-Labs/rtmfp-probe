@@ -96,15 +96,19 @@ static void hex_print(const void* pv, size_t len)
     else {
         printf("  ");
         size_t i = 0;
-        for (; i<len-1;++i) {
+        for (; i<len;++i) {
             text[i % 16] = isprint(*p) ? *p : '.';
-            printf("%02x%s", *p++, (i % 16 == 15) ? "" : ":");
+            printf("%02x%s", *p++, (i % 16 == 15 && i < len - 1) ? "" : ":");
             if (i % 16 == 15) {
-                printf("    %s\n  ", text);
+                printf("    %s\n", text);
+                if (i < len - 1) printf("  ");
                 bzero(text, 17);
             }
         }
-        printf("%02x\n", *p++);
+        for (i = i % 16; i && i < 16; i++) {
+            printf("   ");
+        }
+        printf("   %s\n", text);
     }
 }
 
@@ -172,7 +176,6 @@ static int initPacket(Request *request, uint8_t **bufptr, int *remaining) {
 
     flags |= 0x08;
     if (request->flags.flags.timeCritical) flags |= 0x40;
-    printf("Setting flags: %02x (inc. flags: %d)\n", flags, request->flags.flags.mode);
 
     int consumed = 0;
     consumed += 4;                      // skip ssid, can't write it yet
@@ -208,7 +211,6 @@ static int finalisePacket(Request *request, uint8_t *buffer, int *length) {
     bzero(iv, 16);
     AES_KEY key;
     AES_set_encrypt_key(request->session->encryptKey, 128, &key);
-    //printf("Encrypting packet with key:\n"); hex_print(request->session->encryptKey, 16);
     AES_cbc_encrypt(buffer+4, buffer+4, *length-4, &key, iv, AES_ENCRYPT);
 
     // Write the scrambled SSID in
@@ -409,7 +411,6 @@ int handle_IIKeying(Request *request, uint8_t *payload, int length) {
     unsigned char *sharedKey = malloc(keySize);
     keySize = DH_compute_key(sharedKey, them, myKey);
     // if keySize == -1, fail
-    //printf("Shared key:\n"); hex_print(sharedKey, keySize);
 
     // the skic points now to the SKFC component of the crypto exchange
     // the SKNC component needs to be populated
@@ -443,14 +444,6 @@ int handle_IIKeying(Request *request, uint8_t *payload, int length) {
     // decryptKey = HMAC-256(sharedKey, HMAC-256(SKNC, SKFC))
     HMAC(EVP_sha256(), sknc, skncSize, skic, skicLength, hmac_pad, NULL);
     HMAC(EVP_sha256(), sharedKey, keySize, hmac_pad, 32, decrypt_hmac, NULL);
-
-    //printf("SKNC:\n");
-    //hex_print(sknc, skncSize);
-    //printf("SKFC:\n");
-    //hex_print(skic, skicLength);
-    //printf("Created keys:\n");
-    //hex_print(encrypt_hmac, 16);
-    //hex_print(decrypt_hmac, 16);
 
     // Free up all the ephemeral data so errors become easier to handle
     free(sharedKey);
@@ -585,14 +578,13 @@ int handle_UserData(Request *request, uint8_t *payload, int length)
                         "\x05"                          // connection properties (NULL)
                         "\x03"                          // response {
                             "\x00\x0e""objectEncoding\x00\x40\x08\0\0\0\0\0\0"
-                            "\x00\x04""motd\x02\x00\x1b""Adobe Chicago IL USA server"
+                            "\x00\x04""motd\x02\x00\x17""APNIC Labs rtmfp server"
                             "\x00\x0b""description\x02\x00\x14""Connection succeeded"
                             "\x00\x05""level\x02\x00\x06""status"
                             "\x00\x04""code\x02\x00\x1d""NetConnection.Connect.Success"
                         "\x00\x00\x09";                 // }
         memcpy(bufptr, result, sizeof(result) - 1);
         bufptr += sizeof(result) - 1; remaining -= sizeof(result) - 1;
-        printf("responding to connect call\n");
     } else if (command_match(&command, "setPeerInfo")) {
         char result[] = "\x14\x00\x00\x00\x00"          // invoke, timestamp
                         "\x02\x00\x08""onStatus"          // command name
@@ -605,37 +597,80 @@ int handle_UserData(Request *request, uint8_t *payload, int length)
         memcpy(bufptr, result, sizeof(result) - 1);
         bufptr += sizeof(result) - 1; remaining -= sizeof(result) - 1;
         // need to concatenate the given addresses into a single string
+        uint16_t *addrLength = (uint16_t *)bufptr;
+        bufptr += 2; remaining -= 2;
+        uint8_t *addrStart = bufptr;
+        if (remaining < command.argumentLength) _error("out of space for reply packet", 0);
         int addrLen = command.argumentLength;
         uint8_t *addrs = command.arguments;
-        hex_print(addrs, addrLen);
         while (addrLen > 0) {
             addrLen--;
             uint8_t type = *(addrs++);
-            printf("type: %02x\n", type);
             if (type == 0x05) continue;
             if (type != 0x02) _error("unknown argument type", 0);
             uint16_t len = ntohs(*(uint16_t *)addrs);
             if (len > addrLen) _error("truncated arguments", 0);
-            hex_print(addrs + 2, len);
+            memcpy(bufptr, addrs + 2, len);
+            bufptr += len;
+            *(bufptr++) = ';';
+            remaining -= len + 1;
             addrLen -= len + 2;
             addrs += len + 2;
+            *addrLength = htons(bufptr - addrStart);
         }
-        return 0;
+        if (remaining < 3) _error("out of space for reply packet", 0);
+        *(bufptr++) = 0;
+        *(bufptr++) = 0;
+        *(bufptr++) = 9;
+        remaining -= 3;
+        printf("Remote addresses discovered: %s\n", addrStart);
     } else {
-        printf("Unrecognised RTMP invoke call\n");
-        hex_print(payload, length > 15 ? 15 : length);
         return 0;  // just bail, don't know, won't respond
     }
 
     *lengthptr = htons(payloadLength - remaining);
 
     request->rlength = sizeof(request->response) - remaining;
-    printf("response, pre-encryption/padding/checksum/length:\n");
-    hex_print(request->response, request->rlength);
-    printf("end response\n");
     if (remaining < 15 || !finalisePacket(request, request->response, &request->rlength))
         _error("finalisation failed", 0);
 
+    return 1;
+}
+
+int
+handle_CloseRequest(Request *request, uint8_t *payload, int length)
+{
+    uint8_t *bufptr = request->response;
+    int remaining = sizeof(request->response);
+    if (!initPacket(request, &bufptr, &remaining) || remaining < 3) _error("out of space", 0);
+    memcpy(bufptr, "\x4c\0\0", 3);
+    request->rlength = sizeof(request->response) - remaining + 3;
+    if (remaining < 15 || !finalisePacket(request, request->response, &request->rlength))
+        _error("finalisation failed", 0);
+    return 1;
+}
+
+int
+handle_CloseAcknowledgement(Request *request, uint8_t *payload, int length)
+{
+    return 1;
+}
+
+int
+handle_DataAcknowledgement(Request *request, uint8_t *payload, int length)
+{
+    vlu_read(&payload, &length);
+    vlu_read(&payload, &length);
+    int ack = vlu_read(&payload, &length);
+    if (ack == 2) {
+        uint8_t *bufptr = request->response;
+        int remaining = sizeof(request->response);
+        if (!initPacket(request, &bufptr, &remaining) || remaining < 3) _error("out of space", 0);
+        memcpy(bufptr, "\x0c\0\0", 3);
+        request->rlength = sizeof(request->response) - remaining + 3;
+        if (remaining < 15 || !finalisePacket(request, request->response, &request->rlength))
+            _error("finalisation failed", 0);
+    }
     return 1;
 }
 
@@ -643,9 +678,12 @@ struct ChunkHandler {
     uint8_t type;
     int (*handler)(Request *, uint8_t *, int);
 } chunkHandlers[] = {
+    { 0x0c, handle_CloseRequest },
     { 0x10, handle_UserData },
     { 0x30, handle_IHello },
     { 0x38, handle_IIKeying },
+    { 0x4c, handle_CloseAcknowledgement },
+    { 0x51, handle_DataAcknowledgement },
     { 0, NULL }
 };
 
@@ -677,7 +715,6 @@ int chunk_process(Request *request, uint8_t **bufptr, int *remaining) {
         handler++;
     }
 
-    printf("Unknown chunk type 0x%02x\n", type);
     return -1;
 }
 
@@ -708,10 +745,7 @@ int rtmfpReadDatagram(RtmfpService *service)
     request.service = service;
     request.session = service->sessions + (words[0] & 0xffff);
 
-    printf("Remote client is sending a message for session ID %d\n", words[0]);
-
     if (bytes % 16 != 4) {
-        printf("datagram is not a multiple of 16 bytes!\n");
         return -1;
     }
 
@@ -719,30 +753,21 @@ int rtmfpReadDatagram(RtmfpService *service)
 
     unsigned char iv[16];
     AES_KEY key;
-    //printf("AES decryption key:\n");
-    //hex_print(request.session->decryptKey, 16);
     AES_set_decrypt_key(request.session->decryptKey, 128, &key);
     bzero(iv, 16);
     AES_cbc_encrypt(buffer+4, buffer+4, bytes-4, &key, iv, AES_DECRYPT);
-    //printf("Decrypted block:\n");
-    //hex_print(buffer, bytes);
 
     bufptr = buffer + 4;
     remaining = bytes - 4;
 
     uint16_t checksum = ip_checksum(bufptr+2, remaining - 2);
     if (checksum != ((uint16_t *)bufptr)[0]) {
-        printf("Invalid checksum received\n");
         return -1;
     }
     remaining -= 2;
     bufptr += 2;
 
     request.flags.byteval = *bufptr;
-
-    printf("Flags: TC:%d TCR:%d rsv:%d TS:%d TSE:%d MOD:%d\n",
-            request.flags.flags.timeCritical, request.flags.flags.timeCriticalReverse, request.flags.flags.reserved,
-            request.flags.flags.timestampPresent, request.flags.flags.timestampEchoPresent, request.flags.flags.mode);
 
     bufptr += 1;
     remaining -= 1;
@@ -756,8 +781,6 @@ int rtmfpReadDatagram(RtmfpService *service)
     while (chunk_process(&request, &bufptr, &remaining)) {
         if (request.rlength > 0) {
             sendto(service->fd, request.response, request.rlength, 0, (struct sockaddr *)&addr, addrlen);
-            //printf("%d bytes of data:\n", request.rlength);
-            //hex_print(request.response, request.rlength);
         }
     }
     if (request.service->errmsg) {
