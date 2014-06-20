@@ -134,6 +134,8 @@ while True:
     ssid = words[0] ^ words[1] ^ words[2]
     msg = crypto.decrypt(msg[4:], dkey)
     # if it's a crypto exchange, replace it with my keying material
+    # RHello packet from server to client needs 
+
     print addr
     msg = crypto.encrypt(msg, ekey)
     words = struct.unpack("!LL", msg[:8])

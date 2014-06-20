@@ -8,12 +8,29 @@ import struct
 from binascii import hexlify, unhexlify
 
 UDP_IP='50.57.70.211'
-UDP_IP='127.0.0.1'
+#UDP_IP='127.0.0.1'
 UDP_PORT=1935 #macromedia-fcs
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(('', 0))
 print 'Listening on port ' + str(sock.getsockname()[1])
+
+def hex_print(buf):
+    chx = ""
+    out = "  "
+    for i in range(len(buf)):
+        if ord(buf[i]) > 31 and ord(buf[i]) < 127:
+            chx = chx + buf[i]
+        else:
+            chx = chx + '.'
+        out = out + ("%02X " % ord(buf[i]))
+        if (i % 16) == 15:
+            out = out + "  " + chx
+            if i < len(buf) - 1: out = out + "\n  "
+            chx = ""
+    if i % 16 != 15:
+        out = out + ("   " * (i % 16)) + chx
+    print out
 
 def carry_around_add(a, b):
     c = a + b
@@ -48,10 +65,11 @@ def unwrap(msg, key):
     chksum = checksum(msg[2:])
     if chksum != struct.unpack('=H', msg[:2])[0]:
         msg = crypto.decrypt(orig, crypto.DEFAULT_KEY)
-        print "invalid checksum", data['ssid'], repr(orig), hexlify(orig), repr(msg)
+        print "invalid checksum", data['ssid']
         chksum = checksum(msg[2:])
         if chksum == struct.unpack('=H', msg[:2])[0]:
-            print "default crypto key message"
+            print "default crypto key message:"
+            hex_print(msg)
         return None
     flags = ord(msg[2])
     print 'Flags:', hex(flags)
@@ -179,23 +197,45 @@ invokeConnect = ('\x80' + # flags
                 '\x00\x3f\xf0\x00\x00\x00\x00\x00\x00' + # 1.0
                 '\x03' + # {
                 '\x00\x03app\x02\x00\x00' + # app: ""
+                '\x00\x0eobjectEncoding' + # objectEncoding:
+                '\x00\x40\x08\x00\x00\x00\x00\x00\x00' + # 3.0
                 '\x00\x00\x09') # }
 Invoke = prep('\x10' + struct.pack('!H', len(invokeConnect)) + invokeConnect, remote_ssid, 1, enc)
+
+invokePeerInfo = ('\x00' + # flags
+                  '\x02\x02\x01' + # flow ID, seq#, fnsOffset
+                  '\x11\x00\x00\x00\x00' + # RTMP.Invoke(AMF3)
+                  '\x00\x02\x00\x0bsetPeerInfo' + # setPeerInfo
+                  '\x40\x08\x00\x00\x00\x00\x00\x00\x00' + # 3.0
+                  '\x05' + # NULL
+                  '\x02\x00\x13203.119.42.20:55694' +
+                  '\x02\x00\x2b[2001:dc0:a000:4:3e07:54ff:fe1b:5fad]:55695' +
+                  '\x02\x00\x2b[2001:dc0:a000:4:5466:32d8:c3c6:19f7]:55695')
+PeerInfo = prep('\x10' + struct.pack('!H', len(invokePeerInfo)) + invokePeerInfo, remote_ssid, 1, enc)
+
 sock.sendto(Invoke, (UDP_IP, UDP_PORT))
+
+messages = [PeerInfo]
 
 while True:
     msg, addr = sock.recvfrom(1024)
     data = unwrap(msg, dec)
-    print 'RTMP response:', data
-    for ch in data['chunks']:
-        if ch[0] == 0x10: # UserData, acknowledge
-            bobs = ch[2][1:]
-            (fid, bobs) = vread(bobs)
-            (seq, bobs) = vread(bobs)
-            echo = vwrite(fid) + '\x7f' + vwrite(seq)
-            ack = ('\x51\x00' + vwrite(len(echo)) + echo)
-            Ack = prep(ack, remote_ssid, 1, enc)
-            sock.sendto(Ack, (UDP_IP, UDP_PORT))
+    print 'Incoming message:', data
+    if data:
+        for ch in data['chunks']:
+            print 'Chunk type %02x:' % ch[0]
+            hex_print(ch[2])
+            if ch[0] == 0x10: # UserData, acknowledge
+                bobs = ch[2][1:]
+                (fid, bobs) = vread(bobs)
+                (seq, bobs) = vread(bobs)
+                echo = vwrite(fid) + '\x7f' + vwrite(seq)
+                ack = ('\x51\x00' + vwrite(len(echo)) + echo)
+                Ack = prep(ack, remote_ssid, 1, enc)
+                sock.sendto(Ack, (UDP_IP, UDP_PORT))
+        if len(messages) > 0:
+            print "Sending next message..."
+            sock.sendto(messages.pop(), (UDP_IP, UDP_PORT))
 
 if __name__=="__fred__":
     a = DiffieHellman()
