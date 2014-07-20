@@ -85,7 +85,6 @@ void rtmfpDestroy(RtmfpService *service) {
     free(service);
 }
 
-// a simple hex-print routine. could be modified to print 16 bytes-per-line
 static void hex_print(const void* pv, size_t len)
 {
     const unsigned char * p = (const unsigned char*)pv;
