@@ -1,0 +1,9 @@
+v0.1.1:
+	* Compile on FreeBSD
+
+v0.1.2:
+	* Rename LICENSE to COPYING to satisfy autotools
+
+v0.2.0:
+	* Bind to IPv6 instead of IPv4 for dual stack service
+	* IPv6 binding may not work correctly on all systems, this will likely change
