@@ -8,7 +8,7 @@ import struct
 from binascii import hexlify, unhexlify
 
 UDP_IP='50.57.70.211'
-#UDP_IP='127.0.0.1'
+UDP_IP='127.0.0.1'
 UDP_PORT=1935 #macromedia-fcs
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -28,8 +28,8 @@ def hex_print(buf):
             out = out + "  " + chx
             if i < len(buf) - 1: out = out + "\n  "
             chx = ""
-    if i % 16 != 15:
-        out = out + ("   " * (i % 16)) + chx
+    if len(buf) % 16 != 15:
+        out = out + ("   " * (len(buf) % 16)) + chx
     print out
 
 def carry_around_add(a, b):
@@ -217,7 +217,8 @@ sock.sendto(Invoke, (UDP_IP, UDP_PORT))
 
 messages = [PeerInfo]
 
-while True:
+ongoing = True
+while ongoing:
     msg, addr = sock.recvfrom(1024)
     data = unwrap(msg, dec)
     print 'Incoming message:', data
@@ -233,6 +234,8 @@ while True:
                 ack = ('\x51\x00' + vwrite(len(echo)) + echo)
                 Ack = prep(ack, remote_ssid, 1, enc)
                 sock.sendto(Ack, (UDP_IP, UDP_PORT))
+            if ch[0] == 0x0c: # Terminate request, bomb out
+                ongoing = False
         if len(messages) > 0:
             print "Sending next message..."
             sock.sendto(messages.pop(), (UDP_IP, UDP_PORT))

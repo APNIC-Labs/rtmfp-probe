@@ -9,6 +9,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#include <arpa/inet.h>
+
 #include <openssl/aes.h>
 #include <openssl/bn.h>
 #include <openssl/dh.h>
@@ -25,8 +27,6 @@ const uint8_t defaultSessionKey[16] = {
 };
 
 struct RtmfpService {
-    int fd;
-
     int errno;
     char *errmsg;
 
@@ -43,6 +43,8 @@ struct RtmfpService {
 typedef struct Request {
     RtmfpService *service;
     struct Session *session;
+
+    char remote_name[INET6_ADDRSTRLEN];
 
     union {
         struct {
@@ -64,12 +66,11 @@ typedef struct Request {
 const char *defaultKey = "Adobe Systems 02";
 
 // Create a new RtmfpService
-RtmfpService *rtmfpInitialise(int fd)
+RtmfpService *rtmfpInitialise()
 {
     RtmfpService *service = malloc(sizeof(RtmfpService));
     if (!service) return NULL;
 
-    service->fd = fd;
     service->errno = 0;
     service->errmsg = NULL;
     service->sessions[0].remoteId = 0;
@@ -622,7 +623,7 @@ int handle_UserData(Request *request, uint8_t *payload, int length)
         *(bufptr++) = 0;
         *(bufptr++) = 9;
         remaining -= 3;
-        printf("Remote addresses discovered: %s\n", addrStart);
+        printf("%s: remote addresses discovered: %s\n", request->remote_name, addrStart);
     } else {
         return 0;  // just bail, don't know, won't respond
     }
@@ -718,7 +719,7 @@ int chunk_process(Request *request, uint8_t **bufptr, int *remaining) {
 }
 
 // Read a datagram for a service
-int rtmfpReadDatagram(RtmfpService *service)
+int rtmfpReadDatagram(RtmfpService *service, int fd)
 {
     struct sockaddr_storage addr;
     socklen_t addrlen;
@@ -729,7 +730,7 @@ int rtmfpReadDatagram(RtmfpService *service)
     uint32_t words[3];
 
     addrlen = sizeof(addr);
-    bytes = recvfrom(service->fd, buffer, sizeof(buffer), 0, (struct sockaddr *)&addr, &addrlen);
+    bytes = recvfrom(fd, buffer, sizeof(buffer), 0, (struct sockaddr *)&addr, &addrlen);
 
     if (bytes < 4) return -1;
 
@@ -743,6 +744,12 @@ int rtmfpReadDatagram(RtmfpService *service)
     Request request;
     request.service = service;
     request.session = service->sessions + (words[0] & 0xffff);
+    void *s_addr = addr.ss_family == AF_INET
+            ? (void *)&((struct sockaddr_in *)&addr)->sin_addr
+            : (void *)&((struct sockaddr_in6 *)&addr)->sin6_addr;
+    if (inet_ntop(addr.ss_family, s_addr, request.remote_name, sizeof(request.remote_name)) == NULL) {
+        strcpy(request.remote_name, "(?)");
+    }
 
     if (bytes % 16 != 4) {
         return -1;
@@ -779,7 +786,7 @@ int rtmfpReadDatagram(RtmfpService *service)
     request.service->errmsg = NULL;
     while (chunk_process(&request, &bufptr, &remaining)) {
         if (request.rlength > 0) {
-            sendto(service->fd, request.response, request.rlength, 0, (struct sockaddr *)&addr, addrlen);
+            sendto(fd, request.response, request.rlength, 0, (struct sockaddr *)&addr, addrlen);
         }
     }
     if (request.service->errmsg) {

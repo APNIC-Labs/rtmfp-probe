@@ -36,7 +36,7 @@ Running
 
     src/rtmfprobe [-l <port>]
 
-Runs forever, listening on (the given|a random) port.
+Runs forever, listening on the given port, or port 1935 if none specified.
 
 Components
 ----------
