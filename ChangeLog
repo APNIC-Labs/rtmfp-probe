@@ -7,3 +7,7 @@ v0.1.2:
 v0.2.0:
 	* Bind to IPv6 instead of IPv4 for dual stack service
 	* IPv6 binding may not work correctly on all systems, this will likely change
+
+v0.3.0:
+	* Properly bind to IPv6
+	* Log found addresses along with querying address
