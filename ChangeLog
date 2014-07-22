@@ -11,3 +11,6 @@ v0.2.0:
 v0.3.0:
 	* Properly bind to IPv6
 	* Log found addresses along with querying address
+
+v0.3.1:
+	* Fix compilation on FreeBSD
