@@ -9,7 +9,7 @@ typedef struct RtmfpService RtmfpService;
 typedef int (UserDataHandler)(uint8_t *payload, int length, uint8_t *reply, int replySpace);
 
 // Create a new RtmfpService
-RtmfpService *rtmfpInitialise(int fd);
+RtmfpService *rtmfpInitialise();
 
 // Destroy a service
 void rtmfpDestroy(RtmfpService *service);
@@ -18,6 +18,6 @@ void rtmfpDestroy(RtmfpService *service);
 void rtmfpAddHandler(RtmfpService *service, uint8_t type, UserDataHandler *handler);
 
 // Read a datagram for a service
-int rtmfpReadDatagram(RtmfpService *service);
+int rtmfpReadDatagram(RtmfpService *service, int fd);
 
 #endif
