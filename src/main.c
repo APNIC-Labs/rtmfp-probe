@@ -1,5 +1,6 @@
 #include <config.h>
 
+#include <errno.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -9,7 +10,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+
 #include <netinet/in.h>
+#include <sys/poll.h>
 
 #include "rtmfp.h"
 
@@ -43,7 +46,7 @@ int main(int argc, char **argv) {
 
         // get host info, make socket, bind it
         memset(&hints, 0, sizeof hints);
-        hints.ai_family = AF_INET6;
+        hints.ai_family = AF_UNSPEC;
         hints.ai_socktype = SOCK_DGRAM;
         hints.ai_flags = AI_PASSIVE;
 
@@ -53,39 +56,40 @@ int main(int argc, char **argv) {
             return EXIT_FAILURE;
         }
 
-        for (rp = res; rp != NULL; rp = rp->ai_next) {
-            sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-            if (sockfd == -1) continue;
-            if (bind(sockfd, rp->ai_addr, rp->ai_addrlen) == 0)
-                break;
-            close(sockfd);
-        }
+        int nfds = 0;
+        for (rp = res; rp != NULL; rp = rp->ai_next) nfds++;
 
-        if (rp == NULL) {
-            fprintf(stderr, "Could not bind service\n");
-            return EXIT_FAILURE;
-        }
+        struct pollfd fds[nfds];
 
-        int bound_port = -1;
-        switch (rp->ai_family) {
-            case AF_INET:
-                printf("v4 ");
-                bound_port = ntohs(((struct sockaddr_in *)rp->ai_addr)->sin_port);
-                break;
-            case AF_INET6:
-                printf("v6 ");
-                bound_port = ntohs(((struct sockaddr_in6 *)rp->ai_addr)->sin6_port);
-                break;
+        for (nfds = 0, rp = res; rp != NULL; rp = rp->ai_next) {
+            fds[nfds].fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+            if (fds[nfds].fd == -1) {
+                perror("socket");
+                return EXIT_FAILURE;
+            }
+            fds[nfds].events = POLLIN;
+            if (bind(fds[nfds].fd, rp->ai_addr, rp->ai_addrlen) != 0) {
+                if (errno != EADDRINUSE) {
+                    perror("bind");
+                    return EXIT_FAILURE;
+                }
+                close(fds[nfds].fd);
+                continue;
+            }
+            nfds++;
         }
-        
-        printf("Listening forever on port %d\n", bound_port);
 
         freeaddrinfo(res);
 
-        RtmfpService *service = rtmfpInitialise(sockfd);
+        RtmfpService *service = rtmfpInitialise();
 
         while (1) {
-            rtmfpReadDatagram(service);
+            int n = poll(fds, nfds, -1);
+            for (int i = 0; n > 0 && i < nfds; i++) {
+                if (fds[i].revents & POLLIN) {
+                    rtmfpReadDatagram(service, fds[i].fd);
+                }
+            }
         }
     }
 
