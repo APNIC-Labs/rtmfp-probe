@@ -357,6 +357,7 @@ static int find_dhkey(uint8_t *data, int length, int type, int group, int endOnM
 int handle_IIKeying(Request *request, uint8_t *payload, int length) {
     // allocate a session ID
     uint32_t sessionId = request->service->nextSessionId++;
+    if (sessionId == 0) sessionId = request->service->nextSessionId++;
 
     if (length < 4) _error("truncated IIKeying chunk", 0);
 
