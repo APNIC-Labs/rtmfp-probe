@@ -14,3 +14,6 @@ v0.3.0:
 
 v0.3.1:
 	* Fix compilation on FreeBSD
+
+v0.3.2:
+	* Don't overwrite the crypto keys for session 0
